@@ -1,56 +1,81 @@
-import oauth2 as oauth
-import urllib.request as urllib
-
+import tweepy, sys, jsonpickle
 
 class TwitterStream:
     def __init__(self, api_key, api_secret, access_token_key, access_token_secret):
+        # Reference page: http://www.karambelkar.info/2015/01/how-to-use-twitters-search-rest-api-most-effectively./
+
         # Input your own api credentials from Twitter API
-        self.api_key = api_key  # <Enter api key>
-        self.api_secret = api_secret  # <Enter api secret>"
-        self.access_token_key = access_token_key  # <Enter your access token key here>"
-        self.access_token_secret = access_token_secret  # <Enter your access token secret here>"
+        auth = tweepy.AppAuthHandler(api_key, api_secret)
+        # auth.set_access_token(access_token_key, access_token_secret)
 
-        _debug = 0
+        # Create API handler
+        self.api = tweepy.API(auth, wait_on_rate_limit=True,
+                              wait_on_rate_limit_notify=True)
 
-        self.oauth_token = oauth.Token(key=self.access_token_key, secret=self.access_token_secret)
-        self.oauth_consumer = oauth.Consumer(key=self.api_key, secret=self.api_secret)
+        if not self.api:
+            print("Can't Authenticate")
+            sys.exit(-1)
 
-        self.signature_method_hmac_sha1 = oauth.SignatureMethod_HMAC_SHA1()
+    # Return a list of locations IDs where Twitter has trending information
+    def trends_available(self):
+        return self.api.trends_available()
 
-        self.http_handler = urllib.HTTPHandler(debuglevel=_debug)
-        self.https_handler = urllib.HTTPSHandler(debuglevel=_debug)
+    # Return tweets for specific query
+    def old_search(self, query):
+        count = 100
+        return self.api.search(q=query)
 
-    def _twitterreq(self, url, method, parameters):
-        """
-        Construct, sign, and open a twitter request
-        using the hard-coded credentials above.
-        """
+    def extract_original_tweets:
+        # Store all downloaded tweets in a set (say set A)
+        # From this set filter out the retweets & extract the original tweet from these retweets (say set B)
+        # Insert in set A all unique tweets from set B that are not already in set A
+        pass
 
-        req = oauth.Request.from_consumer_and_token(self.oauth_consumer,
-                                                    token=self.oauth_token,
-                                                    http_method=method,
-                                                    http_url=url,
-                                                    parameters=parameters
-                                                    )
+    def search(self, searchQuery, fName):
+        maxTweets = 45000 # Some arbitrary large number
+        tweetsPerQry = 100  # this is the max the API permits
+        # fName = 'tweets.txt' # We'll store the tweets in a text file.
 
-        req.sign_request(self.signature_method_hmac_sha1, self.oauth_consumer, self.oauth_token)
 
-        if method == "POST":
-            encoded_post_data = req.to_postdata()
-        else:
-            encoded_post_data = None
-            url = req.to_url()
+        # If results from a specific ID onwards are reqd, set since_id to that ID.
+        # else default to no lower limit, go as far back as API allows
+        sinceId = None
 
-        opener = urllib.OpenerDirector()
-        opener.add_handler(self.http_handler)
-        opener.add_handler(self.https_handler)
+        # If results only below a specific ID are, set max_id to that ID.
+        # else default to no upper limit, start from the most recent tweet matching the search query.
+        max_id = -1L
 
-        response = opener.open(url, encoded_post_data)
+        tweetCount = 0
+        print("Downloading max {0} tweets".format(maxTweets))
+        with open(fName, 'w') as f:
+            while tweetCount < maxTweets:
+                try:
+                    if (max_id <= 0):
+                        if (not sinceId):
+                            new_tweets = self.api.search(q=searchQuery, count=tweetsPerQry)
+                        else:
+                            new_tweets = self.api.search(q=searchQuery, count=tweetsPerQry,
+                                                    since_id=sinceId)
+                    else:
+                        if (not sinceId):
+                            new_tweets = self.api.search(q=searchQuery, count=tweetsPerQry,
+                                                    max_id=str(max_id - 1))
+                        else:
+                            new_tweets = self.api.search(q=searchQuery, count=tweetsPerQry,
+                                                    max_id=str(max_id - 1),
+                                                    since_id=sinceId)
+                    if not new_tweets:
+                        print("No more tweets found")
+                        break
+                    for tweet in new_tweets:
+                        f.write(jsonpickle.encode(tweet._json, unpicklable=False) +
+                                '\n')
+                    tweetCount += len(new_tweets)
+                    print("Downloaded {0} tweets".format(tweetCount))
+                    max_id = new_tweets[-1].id
+                except tweepy.TweepError as e:
+                    # Just exit if any error
+                    print("some error : " + str(e))
+                    break
 
-        return response
-
-    def fetch(self):
-        url = "https://stream.twitter.com/1/statuses/sample.json"
-        parameters = []
-        response = self._twitterreq(url, "GET", parameters)
-        return response
+        print ("Downloaded {0} tweets, Saved to {1}".format(tweetCount, fName))
